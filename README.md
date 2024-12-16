@@ -9,20 +9,20 @@ Based on Hive Python Package implementing ABC Algorithm in Python (https://doi.o
 
 
 ## Files decriptions
-**Run.py** - a file that receives input information about the molecule, the type of search and the number of iterations
-**Molecule.py** - a file that translates smiles or the path to the file containing the molecule into an object containing all the information about the conformations of the molecule during the calculation
-**Cycle.py** - a file that contains a call to global and local conformational searches, calculates the necessary functions and compares the conformations with each other
-**Algorithm.py** - a file that contains the Artificial Bee Colony Algorithm itself, a single one for local and global searches
+- **Run.py** - a file that receives input information about the molecule, the type of search and the number of iterations
+- **Molecule.py** - a file that translates smiles or the path to the file containing the molecule into an object containing all the information about the conformations of the molecule during the calculation
+- **Cycle.py** - a file that contains a call to global and local conformational searches, calculates the necessary functions and compares the conformations with each other
+- **Algorithm.py** - a file that contains the Artificial Bee Colony Algorithm itself, a single one for local and global searches
 
 **Necessary parameters**
-**"input"** - choose between "molfile" and "smiles"
-**"molecule"** - string  contains smiles or path to .mol-file
+- **"input"** - choose between "molfile" and "smiles"
+- **"molecule"** - string  contains smiles or path to .mol-file
 
 **additional parameters**
-**"--n_confs"** - number of conformations in enseble
-**"--global_iterations"** - number of ABC iterations of global conformation search
-**"--local_iterations"** - number of ABC iterations of local conformation search
-**"--global_exists"** - path to .xyz-file containing global minimum conformation of required molecule
+- **"--n_confs"** - number of conformations in enseble
+- **"--global_iterations"** - number of ABC iterations of global conformation search
+- **"--local_iterations"** - number of ABC iterations of local conformation search
+- **"--global_exists"** - path to .xyz-file containing global minimum conformation of required molecule
 
 
 ## How to install 
@@ -46,9 +46,9 @@ conda activate abc_conformations
 python3 Run.py {input} {molecule} --n_confs XX --global_iterations XX --local_iterations XX --global-exists <path/to/global/xyzfile>
 ```
 
-In the folder where the package files are located, the following folder system will be created:
+3. In the folder where the package files are located, the following folder system will be created:
 - FINAL
-    - <molecule-name>
+    - molecule-name
         - LOGS
         - BEES
             - OPT
@@ -57,12 +57,12 @@ In the folder where the package files are located, the following folder system w
         - PICKLE
 		- ENSEMBLE
 		
-**FINAL** - common folder for all molecules you want to calculate
-**LOGS** - folder with temporary files and logs of ABC Algorithm work for every conformation
-**BEES** - all calculated conformations
-    **UNOPT** - conformations got after ABC Algorithm work    
-    **OPT** - optimized conformations which may be included in ensembe
-**PICKLE** - folder with .pickle-file containing all molecule data after calculation
-**ENSEMBLE** - folder with final ensemble 
+- **FINAL** - common folder for all molecules you want to calculate
+- **LOGS** - folder with temporary files and logs of ABC Algorithm work for every conformation
+- **BEES** - all calculated conformations
+   - 	**UNOPT** - conformations got after ABC Algorithm work    
+   - 	**OPT** - optimized conformations which may be included in ensembe
+- **PICKLE** - folder with .pickle-file containing all molecule data after calculation
+- **ENSEMBLE** - folder with final ensemble 
 
-3. When calculation is over, approved conformations will be located in ./FINAL/<molecule-name>/ENSEMBLE directory
+4. When calculation is over, approved conformations will be located in ```./FINAL/molecule-name/ENSEMBLE directory```
