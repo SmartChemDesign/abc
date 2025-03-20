@@ -3,7 +3,8 @@
 import copy
 import random
 import sys
-
+from collections import defaultdict
+import time
 import numpy as np
 
 # ---- BEE CLASS
@@ -19,9 +20,9 @@ class Bee(object):
         Initialise random bee object
 
         Parameters:
-        - lower (float): Object containing information about molecule.
-        - upper (float): Object containing information about molecule.
-        - fun (function): Object containing information about molecule.
+        - lower (float): lower limit of the range of solutions.
+        - upper (float): upper limit of the range of solutions.
+        - fun (function): Function for converting the vector of dihedral angles into energy.
         - pickle (float): Object containing information about molecule.
 
         Returns:
@@ -53,6 +54,7 @@ class BeeHive(object):
         max_itrs,
         max_trials,
         threshold,
+        grid,
         last_population,
         chosen_index,
         last_counter,
@@ -84,6 +86,7 @@ class BeeHive(object):
         """
 
         assert len(upper) == len(lower)
+        self.alltime = time.time()
         self.Type = Type
         self.lower = lower
         self.upper = upper
@@ -94,6 +97,11 @@ class BeeHive(object):
         self.max_trials = max_trials
         self.pickle = pickle
         self.threshold = threshold
+        
+        self.ladder_time = 0
+        self.grid_time = 0
+        self.grid = grid
+        self.conf_time = 0
         
         self.allbees = allbees
         self.allindexes = allindexes
@@ -115,8 +123,12 @@ class BeeHive(object):
         
         
         self.currentbees = []
+        self.currentindex = 0
         self.failed_attempts = 0
+        
         self.best = sys.float_info.min
+        self.solution = [0] * self.dim
+        self.best_index = 0
         
         if self.Type == 'Local':
             for i in range(len(self.population)):
@@ -124,9 +136,11 @@ class BeeHive(object):
             newbees = []
             if self.chosen_index is not None:
                 while len(newbees) < 1:
+                    t = time.time()
                     newbee = Bee(lower, upper, fun, pickle)
+                    self.conf_time += time.time()-t
                     print(newbee.vector)
-                    if self.ladder_registration(newbee.vector, self.visited, threshold=self.threshold) is False or newbee.value == 0:
+                    if self.add_vector(newbee.vector) == False or newbee.value == 0:
                         continue
                     else:
                         self.calculation_counter += 1
@@ -152,9 +166,12 @@ class BeeHive(object):
         elif Type == 'Global':
             while len(self.population) < self.size:
                 print('INITIAL HIVE')
+                t = time.time()
                 newbee = Bee(lower, upper, fun, pickle)
+                self.conf_time += time.time()-t
                 print(np.around(newbee.vector, decimals=4))
-                if self.ladder_registration(newbee.vector, self.visited, threshold=self.threshold) == False or newbee.value == 0:
+                if self.add_vector(newbee.vector) == False or newbee.value == 0:
+
                     continue
                 else:
                     self.calculation_counter += 1
@@ -167,7 +184,31 @@ class BeeHive(object):
 
             self.compute_global_probability()
 
+    def _get_keys(self, vector):
 
+        keys = []
+        for i in range(len(vector)):
+            key = int(vector[i] / self.threshold)
+            keys.append(key)
+        return [tuple(keys)]
+    
+    def add_vector(self, new_vector):
+
+        keys = self._get_keys(new_vector)
+        t = time.time()
+
+        for key in keys:
+            for vector in self.grid[key]:
+                if all(abs(v1 - v2) < self.threshold for v1, v2 in zip(vector, new_vector)):
+                    print("Similar vector already exists.")
+                    self.grid_time += time.time() - t
+                    return False
+        for key in keys:
+            self.grid[key].append(new_vector)
+        self.grid_time += time.time() - t
+        return True    
+    
+            
     def run(self):
         """Runs an Artificial Bee Colony (ABC) algorithm."""
         for itr in range(self.max_itrs):
@@ -176,6 +217,7 @@ class BeeHive(object):
             self.write_current_data()
             self.write_send_employee(itr)
             for index in range(self.size):
+                print('EMPLOYEE:', index)
                 self.send_employee(index)
             self.write_current_data()
             self.write_end_send_employee(itr)
@@ -197,6 +239,10 @@ class BeeHive(object):
         print('current vectors:', np.around([bee.vector for bee in self.population], decimals=4))
         print("BEST ON ITERATION:", np.around(self.solution, decimals=4))
         print( "self.best_index", self.best_index)
+        print('ladder time:', self.ladder_time)
+        print('grid time:', self.grid_time)
+        print('conf time:', self.conf_time)
+        print('all time:', time.time()-self.alltime)
         self.allindexes.append(len(self.allbees) + self.currentindex)
         self.allbees.extend(self.currentbees)
 
@@ -256,7 +302,7 @@ class BeeHive(object):
         )
 
         return [sum(self.probas[: i + 1]) for i in range(self.size)]
-            
+                 
     def send_employee(self, index):
         """Send employee bees
 
@@ -281,18 +327,15 @@ class BeeHive(object):
                 f"candidate bee: {np.around(zombee.vector, decimals =4)}\n",
                 sep="\n",
             )
-            if (
-                self.ladder_registration(
-                    zombee.vector, self.visited, threshold=self.threshold
-                )
-                is False
-            ):
+            if self.add_vector(zombee.vector) == False:
                 continue
             else:
                 
                 self.failed_ladder_attempts = 0
                 self.visited.append(copy.deepcopy(zombee.vector))
+                t = time.time()
                 zombee.value, zombee.fitness = self.evaluate(zombee.vector, self.pickle)
+                self.conf_time += time.time()-t
                 if zombee.value == 0:
                     print("Molecule crashes", end="\n")
                     continue
@@ -313,6 +356,7 @@ class BeeHive(object):
         numb_onlookers = 0
         beta = 0
         while numb_onlookers < self.size:
+            print('ONLOOKER:', numb_onlookers)
             phi = random.random()
             beta += phi * max(self.probas)
             beta %= sum(self.probas)
@@ -356,13 +400,10 @@ class BeeHive(object):
         if len(bees_for_change) > 0:
             newbees = []
             while len(newbees) < len(bees_for_change):
+                t = time.time()
                 newbee = Bee(self.lower, self.upper, self.evaluate, self.pickle)
-                if (
-                        self.ladder_registration(
-                            newbee.vector, self.visited, threshold=self.threshold
-                        )
-                        is False
-                    ):
+                self.conf_time += time.time()-t
+                if self.add_vector(newbee.vector) == False:
                     continue
                 else:
                     self.failed_ladder_attempts = 0
@@ -438,6 +479,7 @@ class BeeHive(object):
         Returns:
         - bool: returns whether the diversity condition is satisfied
         """
+        t = time.time()
         for i in range(self.dim):
             step = []
             for visited in visited_list:
@@ -445,6 +487,7 @@ class BeeHive(object):
                     step.append(visited)
             visited_list = step
             if len(visited_list) == 0:
+                self.ladder_time += time.time() - t
                 return True
             else:
                 continue
@@ -455,6 +498,7 @@ class BeeHive(object):
         self.failed_ladder_attempts += 1
         if self.failed_ladder_attempts == 30:
             raise FailedBee
+        self.ladder_time += time.time() - t
         return False
 
     def write_current_data(self):
@@ -501,4 +545,3 @@ class BeeHive(object):
         text = f"{itr} best on iteration   {np.around(self.best,  decimals=4)}   {np.around(self.solution, decimals=4)} {itr}"
         text_centered = text.center(90, "-")
         print(text_centered)
-
