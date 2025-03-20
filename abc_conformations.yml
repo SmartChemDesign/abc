@@ -12,5 +12,7 @@ dependencies:
   - rmsd=1.4
   - scipy=1.7.1
   - xtb=6.3.3
+  - pyscf=1.7.6.post1
+  - geometric=0.9.7.2
   pip:
     - ase=3.20.1
