@@ -19,10 +19,13 @@ Based on Hive Python Package implementing ABC Algorithm in Python (https://doi.o
 - **"molecule"** - string  contains smiles or path to .mol-file
 
 **additional parameters**
-- **"--n_confs"** - number of conformations in enseble
-- **"--global_iterations"** - number of ABC iterations of global conformation search
-- **"--local_iterations"** - number of ABC iterations of local conformation search
-- **"--global_exists"** - path to .xyz-file containing global minimum conformation of required molecule
+- **"--n_confs"** - number of conformations in enseble (default:6)
+- **"--global_iterations"** - number of ABC iterations of global conformation search (default: 20)
+- **"--local_iterations"** - number of ABC iterations of local conformation search (default: 20)
+- **"--global_exists"** - path to .xyz-file containing global minimum conformation of required molecule (default: False)
+- **"--MP2"** - add final geometry optimization of conformatinal ensemble at MP2 level of theory (default: False)
+- **--basis** - choose basis set for geometry optimization (default: sto-3g)
+- **--iters** - max steps of optimization (default: 100)
 
 
 ## How to install 
@@ -51,17 +54,19 @@ python3 Run.py {input} {molecule} --n_confs XX --global_iterations XX --local_it
     - molecule-name
         - LOGS
         - BEES
+            - OPT_MP2 (optional)
             - OPT
             - UNOPT
         - ASE
         - PICKLE
-		- ENSEMBLE
+	- ENSEMBLE
 		
 - **FINAL** - common folder for all molecules you want to calculate
 - **LOGS** - folder with temporary files and logs of ABC Algorithm work for every conformation
 - **BEES** - all calculated conformations
    - 	**UNOPT** - conformations got after ABC Algorithm work    
-   - 	**OPT** - optimized conformations which may be included in ensembe
+   - 	**OPT** - optimized conformations which may be included in ensemble
+   - 	**OPT_MP2** - included conformations, optimized at MP2 level of theory
 - **PICKLE** - folder with .pickle-file containing all molecule data after calculation
 - **ENSEMBLE** - folder with final ensemble 
 
