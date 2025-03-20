@@ -4,6 +4,7 @@ import time
 from itertools import combinations
 from pickle import dump, load
 from subprocess import check_output
+from collections import defaultdict
 import shutil
 
 import numpy as np
@@ -16,6 +17,11 @@ from ase import Atoms
 from ase.io.xyz import write_xyz
 from ase.optimize import BFGS
 from xtb.ase.calculator import XTB
+
+from pyscf import gto, scf, mp
+from pyscf.geomopt.geometric_solver import optimize
+from geometric.nifty import bohr2ang
+
 
 from scipy.sparse.csgraph import bellman_ford
 from scipy.spatial import Voronoi
@@ -30,7 +36,7 @@ class FailedHive(Exception):
     """Custom exception for failed hive operations."""
     pass
 
-def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
+def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs, MP2, basis, iters):
     """
     Perform a full optimization cycle for a molecule using the Hive algorithm.
     1) Initialise Molecule object, get reference information about molecule (RMSD, bond orders)
@@ -68,7 +74,7 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
     """ ABC ALGORITHM WORK  """
     
     pickle_path = collect_pickle(mol, 'dihedrals', 'mol', 'name', 'mol_bond_info')    
-    if global_exists == '':
+    if global_exists is False:
         global_1, global_2, global_xyz, global_ase = create_global_paths(mol)
 
         """ GLOBAL SEARCH  """
@@ -76,7 +82,7 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
         sys.stdout = open(FILE, "w")
         pickle_path = collect_pickle(mol, 'dihedrals', 'mol', 'name', 'mol_bond_info')
         try:
-            G_solution, G_population, G_index, G_counter, mol.allbees, mol.allindexes, mol.visited, calculation_counter = run_abc(
+            G_solution, G_population, G_index, G_counter, mol.allbees, mol.allindexes, mol.visited, calculation_counter, mol.grid = run_abc(
                 Type='Global',
                 fun=G_search,
                 numb_bees=G_bees,
@@ -91,7 +97,8 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
                 visited=[],
                 glob_exists=False,
                 pickle=pickle_path,
-                threshold=1
+                threshold=1,
+                grid = defaultdict(list)
             )
             
             
@@ -126,7 +133,7 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
             update_pickle(mol, pickle_path, 'approved_xyzs', 'E_list', 'min_index')
             FILE = f"./FINAL/{mol.name}/LOGS/{mol.name}_local_{i}.log"
             sys.stdout = open(FILE, "w")
-            L_solution, L_population, L_index, L_counter, mol.allbees, mol.allindexes, mol.visited, calculation_counter = run_abc(
+            L_solution, L_population, L_index, L_counter, mol.allbees, mol.allindexes, mol.visited, calculation_counter, mol.grid = run_abc(
                 Type='Global',
                 fun=L_search,
                 numb_bees=L_bees,
@@ -141,11 +148,13 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
                 visited=mol.visited,
                 glob_exists=True,
                 pickle=pickle_path,
-                threshold=1
+                threshold=1,
+                grid=mol.grid
             )
             molecule_postprocessing(mol, calculation_counter, L_solution, local_1, local_2, local_xyz, fmax=0.1)
             
             EC = EnergyCompare(mol.E_list)
+            """"""
             Cond_1, Cond_2, Cond_3 = calculate_conditions(mol, EC, smallest_probability, local_xyz)
             check_conditions(mol, Cond_1, Cond_2, Cond_3, EC, smallest_probability, L_solution, local_xyz)
             
@@ -153,6 +162,13 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
             
         TIME = time.time()-TIME
         sys.stdout = original_stdout
+        if MP2 is True:
+            mol.approved_xyzs_opt = []
+            for i in range (len(mol.approved_xyzs)):
+                i_opt = mol.approved_xyzs[i].split('/')[-1].split('.')[0]+'_MP2.xyz'
+                print(i, i_opt)
+                mol.approved_xyzs_opt.append(optimize_MP2(basis, iters, mol.name, mol.approved_xyzs[i], i_opt))
+            
         with open(f'./FINAL/{mol.name}/PICKLE/{mol.name}.pickle', 'wb') as pick:
             dump(mol, pick)
         for conf in mol.approved_xyzs:
@@ -162,7 +178,7 @@ def full_cycle(mol, G_itrs, L_itrs, global_exists, n_confs):
     return mol.approved_xyzs
         
         
-def run_abc(Type, fun, numb_bees, max_itrs, max_trials, ndim, last_population, chosen_index, last_counter, allbees,  allindexes, visited, glob_exists, pickle, threshold):
+def run_abc(Type, fun, numb_bees, max_itrs, max_trials, ndim, last_population, chosen_index, last_counter, allbees,  allindexes, visited, glob_exists, pickle, threshold, grid):
     """
     Run the Artificial Bee Colony (ABC) algorithm.
 
@@ -203,6 +219,7 @@ def run_abc(Type, fun, numb_bees, max_itrs, max_trials, ndim, last_population, c
                                 max_itrs=max_itrs,
                                 max_trials=max_trials,
                                 threshold=threshold,
+                                grid=grid,
                                 last_population=last_population,
                                 chosen_index=chosen_index,
                                 last_counter=last_counter,
@@ -218,7 +235,7 @@ def run_abc(Type, fun, numb_bees, max_itrs, max_trials, ndim, last_population, c
 
     try:
         model.run()
-        return model.solution, model.population, model.best_index, model.counter, model.allbees, model.allindexes, model.visited, model.calculation_counter
+        return model.solution, model.population, model.best_index, model.counter, model.allbees, model.allindexes, model.visited, model.calculation_counter, model.grid
     except Algorithm.FailedBee:
         raise FailedHive
 
@@ -272,7 +289,7 @@ def global_search(dihedral_values, pickle_file):
     to_mol(file, molfile)
     
     if check_bonds(get_mol_bond_info(molfile), mol_bond_info) is True:
-        Energy = optimization(file, semiopt_asefile, fmax=0.5)
+        Energy = optimization(file, semiopt_asefile, fmax=0.5, optimize=True)
         Fitness = -Energy
         print(f'{np.around(dihedral_values, decimals = 4)}     {Energy:0.4f}')
         return Energy, Fitness
@@ -311,7 +328,7 @@ def local_search(dihedral_values, pickle_file):
     to_mol(file, molfile)
     
     if check_bonds(get_mol_bond_info(molfile), mol_bond_info) is True:
-        Energy = optimization(file, asefile, fmax=0.5)
+        Energy = optimization(file, asefile, fmax=0.5, optimize=True)
         redact_ase(asefile, xyzfile)
         rmsd_min_A = compare_rmsd(approved_xyzs, xyzfile)
         rmsd_part = rmsd_exponnorm_fitness(rmsd_min_A, reference_rmsd)
@@ -361,7 +378,7 @@ def molecule_postprocessing(mol, calculation_counter, solution, conf_1, conf_2, 
     """
     mol.calculation_counter += calculation_counter
     rdmol_to_xyz(mol.mol, mol.dihedrals, solution, conf_1)
-    E = optimization(conf_1, conf_2, fmax=0.1)
+    E = optimization(conf_1, conf_2, fmax=0.1, optimize=True)
     mol.E_list.append(E)
     redact_ase(conf_2, conf_xyz)
     
@@ -416,7 +433,7 @@ def check_bonds(list1, list2):
     else:
         return False
     
-def make_atoms_from_xyz_file(xyz_file):
+def read_xyz(xyz_file):
     """
     Create ASE Atoms object from XYZ file.
 
@@ -430,8 +447,17 @@ def make_atoms_from_xyz_file(xyz_file):
         data = [x.split() for x in data]
         symbols = [x[0] for x in data if len(x) == 4 and '=' not in x]
         positions = [(float(x[1]), float(x[2]), float(x[3])) for x in data if len(x) == 4 and '=' not in x]
-    atoms = Atoms(symbols, positions)
-    return atoms
+    return symbols, positions
+
+def write_xyz_pyscf(filename, atoms, coords):
+    """Запись атомов и координат в .xyz-файл."""
+    with open(filename, 'w') as f:
+        f.write(f"{len(atoms)}\n")
+        f.write("Optimized structure\n")
+        for atom, xyz in zip(atoms, coords):
+            f.write(f"{atom} {xyz[0]:.6f} {xyz[1]:.6f} {xyz[2]:.6f}\n")
+    return f
+
 
 def calculate_energy(xyz_file):
     """
@@ -443,12 +469,12 @@ def calculate_energy(xyz_file):
     Returns:
     - e (float): Energy.
     """
-    atoms = make_atoms_from_xyz_file(xyz_file)
+    atoms = read_xyz(xyz_file)
     atoms.calc = XTB(method="GFN2-xTB")
     e = atoms.get_potential_energy()  
     return e    
     
-def optimization(xyz_file, ase_file, fmax):
+def optimization(xyz_file, ase_file, fmax, optimize):
     """
     Optimize the molecule using ASE and XTB.
 
@@ -460,16 +486,18 @@ def optimization(xyz_file, ase_file, fmax):
     Returns:
     - e (float): Energy.
     """
-    atoms = make_atoms_from_xyz_file(xyz_file)
+    symbols, positions = read_xyz(xyz_file)
+    atoms = Atoms(symbols, positions)
     atoms.calc = XTB(method="GFN2-xTB")
-    trajectory = ase_file.split('.')[0]+'.traj'
-    atoms_bfgs = BFGS(atoms, trajectory=trajectory)
-    atoms_bfgs.run(fmax=fmax)
-    atoms_opt = ase_file
-    write_xyz(atoms_opt, atoms)
+    if optimize is True:
+        trajectory = ase_file.split('.')[0]+'.traj'
+        atoms_bfgs = BFGS(atoms, trajectory=trajectory)
+        atoms_bfgs.run(fmax=fmax)
+        atoms_opt = ase_file
+        write_xyz(atoms_opt, atoms)
     e = atoms.get_potential_energy()  
     return e
-    
+
 def redact_ase(ase_file, new_file):
     """
     Redact ASE file to remove unnecessary information.
@@ -672,6 +700,33 @@ def calculate_ff_for_global_allbees(mol, num_bees, pickle_path):
     print('BEST BEES FOR LOCAL SEARCH:\n', np.around([bee.vector for bee in best_bees], decimals=4))
     return best_bees
 
+def optimize_MP2(basis, iters, name, input_xyz, output_xyz):
+    
+    atoms, coords = read_xyz(input_xyz)
+    
+    mol = gto.M(
+        atom=[[atoms[i], coords[i]] for i in range(len(atoms))],
+        basis=basis,
+        verbose=4
+    )
+    mol.build()
+    
+    mf = scf.RHF(mol)
+    mf.kernel()
+    
+    mp2 = mp.MP2(mf)
+    mp2.kernel()
+    mol_eq = optimize(mp2, maxsteps=int(iters))
+    
+    optimized_coords_bohr = mol_eq.atom_coords()
+    optimized_coords_ang = (optimized_coords_bohr.flatten()*bohr2ang).reshape(-1,3)
+    
+    os.makedirs(f"./FINAL/{name}/BEES/OPT_MP2", exist_ok=True)
+    output_folder = f'./FINAL/{name}/BEES/OPT_MP2/{output_xyz}'
+    write_xyz_pyscf(output_folder, atoms, optimized_coords_ang)
+    return output_folder
+
+    
 def create_path_to(array, index_in, index_out, allbees):
     """
     Create a path between two nodes in the graph.
