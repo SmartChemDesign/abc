@@ -1,0 +1,48 @@
+что делает этот код?
+
+name: Build Front.exe
+
+# Запуск по кнопке вручную или при новом коммите в главную ветку
+on:
+  workflow_dispatch: # Эта строка добавляет кнопку "Run workflow" на сайте!
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: windows-latest # Обязательно Windows, чтобы получить .exe
+    
+    steps:
+      # 1. Скачиваем твой код
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Настраиваем Python и устанавливаем зависимости из твоего .yml файла
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: '3.10' # Укажи версию Python, которую ты используешь
+          # ВАЖНО: Замени 'environment.yml' на точное имя твоего файла с зависимостями, если оно другое!
+          environment-file: abc_conformations.yml 
+          activate-environment: myenv # Если в твоем .yml есть поле 'name:', впиши его сюда вместо 'myenv'
+          auto-activate-base: false
+
+      # 3. Устанавливаем PyInstaller (инструмент для создания .exe)
+      - name: Install PyInstaller
+        run: |
+          conda install pyinstaller -c conda-forge
+
+      # 4. Собираем .exe файл
+      - name: Build EXE
+        run: |
+          # --onefile: упаковать всё в один файл
+          # --noconsole: скрыть черное окно консоли (идеально для GUI/Front)
+          # Если твоя программа консольная, удали флаг --noconsole
+          pyinstaller --onefile  Front.py
+
+      # 5. Сохраняем готовый файл, чтобы ты мог его скачать
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Front_Application
+          path: dist/Front.exe
